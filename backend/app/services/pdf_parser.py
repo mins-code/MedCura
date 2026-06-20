@@ -3,9 +3,13 @@ import re
 import pdfplumber
 from typing import Dict, Optional, Tuple
 
-# MedCura CBC Biomarkers
+# Updated to exactly match the 14 features from diagnosed_cbc_data_v4.csv
 BIOMARKER_ALIASES = {
     "WBC": ["wbc", "total wbc", "white blood cell", "tlc", "leukocytes", "total leukocyte count"],
+    "LYMp": ["lymphocytes %", "lymph %", "lymphocyte percent", "lymphocytes"],
+    "NEUTp": ["neutrophils %", "neutrophil %", "polymorphs %", "neutrophils"],
+    "LYMn": ["lymphocytes absolute", "absolute lymphocytes", "abs lymphocytes"],
+    "NEUTn": ["neutrophils absolute", "absolute neutrophils", "abs neutrophils"],
     "RBC": ["rbc", "red blood cell", "red cell count", "total rbc"],
     "HGB": ["hgb", "hb", "hemoglobin", "haemoglobin"],
     "HCT": ["hct", "hematocrit", "haematocrit", "pcv", "packed cell volume"],
@@ -13,14 +17,12 @@ BIOMARKER_ALIASES = {
     "MCH": ["mch", "mean corpuscular hgb", "mean corpuscular hemoglobin"],
     "MCHC": ["mchc", "mean corpuscular hgb concentration", "mean corpuscular hemoglobin concentration"],
     "PLT": ["plt", "platelet", "platelet count", "thrombocyte count"],
-    "RDW": ["rdw", "red cell distribution width", "rdw-cv", "rdw-sd"],
-    "Ferritin": ["ferritin", "serum ferritin"],
-    "Vitamin B12": ["vitamin b12", "vit b12", "b12", "cobalamin"],
-    "Folate": ["folate", "folic acid", "vitamin b9"]
+    "PDW": ["pdw", "platelet distribution width"],
+    "PCT": ["pct", "plateletcrit"]
 }
 
 # Nephora Regex patterns
-NUMERIC_RE = re.compile(r'^\d+(\.\d+)?$')
+NUMERIC_RE = re.compile(r'^\d+(\.\d+)?(?:[\*HhLl])?$')
 RANGE_RE = re.compile(r'(\d+\.?\d*)\s*[-–]\s*(\d+\.?\d*)')
 INLINE_RE = re.compile(
     r'(.+?)\s{2,}'                          # test name (2+ spaces separator)
