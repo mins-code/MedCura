@@ -1,66 +1,16 @@
-import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useRef } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+
+import api from '../services/api';
 import bloodCellsImg from '../assets/blood-cells.png';
 
 export default function UploadReport() {
+  const [selectedFile, setSelectedFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [currentStep, setCurrentStep] = useState(0);
-  const [statusText, setStatusText] = useState('Parsing PDF...');
-  const [subStatus, setSubStatus] = useState('Analyzing document structure...');
+  const [uploadError, setUploadError] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
-
-  const steps = [
-    { label: 'Parsing PDF...', sub: 'Analyzing document structure...' },
-    { label: 'Extracting values...', sub: 'Identifying numerical data points...' },
-    { label: 'Reading parameters...', sub: 'Cross-referencing with clinical database...' }
-  ];
-
-  const simulateUpload = () => {
-    if (isUploading) return;
-    setIsUploading(true);
-    setProgress(0);
-    setCurrentStep(0);
-    
-    let width = 0;
-    let step = 0;
-    
-    const interval = setInterval(() => {
-        if (width >= 100) {
-            clearInterval(interval);
-            setStatusText("Processing Complete");
-            setSubStatus("Redirecting to Analysis Engine...");
-            setTimeout(() => {
-                alert('Report successfully analyzed. View Clinical Intelligence Dashboard?');
-                window.location.reload(); // Reset simulation
-            }, 1000);
-        } else {
-            width += Math.random() * 8;
-            if (width > 100) width = 100;
-            
-            setProgress(width);
-            
-            if (width > 5 && step === 0) {
-                setStatusText(steps[0].label);
-                setSubStatus(steps[0].sub);
-                setCurrentStep(1);
-                step = 1;
-            }
-            if (width > 40 && step === 1) {
-                setStatusText(steps[1].label);
-                setSubStatus(steps[1].sub);
-                setCurrentStep(2);
-                step = 2;
-            }
-            if (width > 75 && step === 2) {
-                setStatusText(steps[2].label);
-                setSubStatus(steps[2].sub);
-                setCurrentStep(3);
-                step = 3;
-            }
-        }
-    }, 300);
-  };
+  const fileInputRef = useRef(null);
+  const navigate = useNavigate();
 
   const handleDragOver = (e) => {
     e.preventDefault();
@@ -75,18 +25,54 @@ export default function UploadReport() {
   const handleDrop = (e) => {
     e.preventDefault();
     setIsDragOver(false);
-    simulateUpload();
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      if (file.type === 'application/pdf') {
+        setSelectedFile(file);
+        setUploadError('');
+      } else {
+        setUploadError('Please select a valid PDF file.');
+      }
+    }
+  };
+
+  const handleFileChange = (e) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const file = e.target.files[0];
+      if (file.type === 'application/pdf') {
+        setSelectedFile(file);
+        setUploadError('');
+      } else {
+        setUploadError('Please select a valid PDF file.');
+      }
+    }
+  };
+
+  const handleExtract = async () => {
+    if (!selectedFile) return;
+    setIsUploading(true);
+    setUploadError('');
+    try {
+      const res = await api.extractPdf(selectedFile);
+      if (res.data && res.data.success) {
+        navigate('/analysis', { state: { extractedData: res.data.data } });
+      } else {
+        setUploadError(res.data?.error || 'Extraction failed.');
+      }
+    } catch (err) {
+      setUploadError(err.response?.data?.detail || 'An error occurred during extraction.');
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   return (
-    <div className="bg-background text-on-surface font-body-md selection:bg-primary-container selection:text-on-primary-container overflow-x-hidden min-h-screen">
-      {/* Ambient Background */}
+    <div className="bg-medical-mesh text-on-surface font-body-md selection:bg-primary-container selection:text-on-primary-container min-h-screen relative overflow-hidden">
       <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
         <div className="floating-blob top-[-10%] left-[-10%] opacity-40"></div>
         <div className="floating-blob bottom-[-20%] right-[-10%] opacity-30" style={{ animationDelay: '-5s' }}></div>
       </div>
 
-      {/* Navigation Shell */}
       <nav className="w-full h-16 sticky top-0 bg-surface/60 backdrop-blur-3xl border-b border-primary/15 flex items-center justify-between px-margin-desktop z-50">
         <div className="flex items-center gap-unit">
           <Link to="/" className="font-display-hero text-headline-md text-primary tracking-tight">MedCura</Link>
@@ -94,138 +80,124 @@ export default function UploadReport() {
         <div className="hidden md:flex items-center gap-8">
           <Link className="font-data-label text-data-label text-on-surface-variant hover:text-primary transition-colors duration-300" to="/">Home</Link>
           <a className="font-data-label text-data-label text-primary border-b-2 border-primary" href="#">Upload Report</a>
-          <a className="font-data-label text-data-label text-on-surface-variant hover:text-primary transition-colors duration-300" href="#">Blood Analysis</a>
-          <a className="font-data-label text-data-label text-on-surface-variant hover:text-primary transition-colors duration-300" href="#">History</a>
         </div>
         <div className="flex items-center gap-4">
-          <span className="material-symbols-outlined text-on-surface-variant hover:text-primary cursor-pointer transition-colors">notifications</span>
-          <span className="material-symbols-outlined text-on-surface-variant hover:text-primary cursor-pointer transition-colors">settings</span>
           <div className="w-8 h-8 rounded-full bg-primary-container/20 border border-primary/20 flex items-center justify-center overflow-hidden">
             <img className="w-full h-full object-cover" alt="Profile" src={bloodCellsImg} />
           </div>
         </div>
       </nav>
 
-      <main className="relative z-10 max-w-container-max mx-auto px-margin-mobile md:px-margin-desktop py-section-gap">
+      <main className="relative z-10 w-full px-margin-mobile md:px-margin-desktop py-section-gap flex flex-col items-center">
+        
+        {/* Header Section */}
         <div className="flex flex-col items-center text-center max-w-3xl mx-auto mb-16">
           <span className="font-data-label text-data-label text-primary uppercase tracking-widest mb-4">Diagnostics Core</span>
           <h1 className="font-headline-lg text-headline-lg md:text-display-hero text-on-surface mb-6">Precision Data Entry</h1>
-          <p className="font-body-lg text-body-lg text-on-surface-variant">Our MedCura AI parses complex clinical reports with molecular accuracy, extracting biomarkers to provide sophisticated intelligence on your hematological status.</p>
+          <p className="font-body-lg text-body-lg text-on-surface-variant">Securely upload your CBC report to extract clinical biomarkers for our AI ensemble analysis.</p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-gutter items-start">
-          {/* Sidebar: Parameters List */}
-          <div className="lg:col-span-4 order-2 lg:order-1">
-            <div className="glass-card rounded-xl p-8 sticky top-24">
-              <h3 className="font-headline-md text-headline-md text-on-surface mb-6 border-b border-primary/10 pb-4">Supported Parameters</h3>
-              <ul className="space-y-4">
+        {/* Main Content Area: Side-by-side on desktop */}
+        <div className="flex flex-col lg:flex-row gap-12 w-full max-w-6xl mx-auto items-center justify-center">
+          
+          {/* Upload Area */}
+          <div className="w-full lg:w-1/2 flex justify-center">
+            <div className={`relative w-full max-w-lg glass-card rounded-[32px] transition-all duration-500 overflow-hidden ${isDragOver ? 'shadow-[0_0_50px_rgba(183,62,84,0.3)] scale-105' : 'shadow-[0_8px_32px_rgba(0,0,0,0.3)]'}`}>
+              
+              <div className={`absolute inset-0 bg-gradient-to-br from-primary/20 via-transparent to-primary/5 opacity-50 transition-opacity duration-500 ${isDragOver ? 'opacity-100' : ''}`}></div>
+
+              <div 
+                className={`relative h-full bg-[#2a1b20]/80 rounded-[32px] p-12 flex flex-col items-center justify-center transition-all duration-300 border-2 border-dashed ${isUploading ? 'opacity-50 pointer-events-none' : ''} ${isDragOver ? 'border-primary/80 bg-primary/10' : 'border-[#b73e54]/30 hover:border-[#b73e54]/60 hover:bg-[#b73e54]/10'}`}
+                onDragEnter={handleDragOver}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onClick={() => !isUploading && fileInputRef.current.click()}
+                style={{ minHeight: '400px' }}
+              >
+                {selectedFile ? (
+                  <div className="flex flex-col items-center text-center animate-fade-in">
+                    <div className="w-24 h-24 rounded-full border border-emerald-500/30 flex items-center justify-center mb-8 shadow-[0_0_30px_rgba(16,185,129,0.2)]">
+                      <span className="material-symbols-outlined text-emerald-400 text-5xl">task</span>
+                    </div>
+                    <p className="font-headline-md text-2xl text-on-surface mb-2 font-bold">{selectedFile.name}</p>
+                    <p className="font-data-label uppercase tracking-widest text-emerald-400/80 mb-8 font-bold">
+                      {(selectedFile.size / 1024 / 1024).toFixed(2)} MB • Ready
+                    </p>
+                    
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); handleExtract(); }}
+                      disabled={isUploading}
+                      className="bg-primary/20 border border-primary/50 text-primary hover:bg-primary hover:text-on-primary px-10 py-4 rounded-full text-sm font-data-label transition-all active:scale-95 disabled:opacity-50 disabled:active:scale-100 flex items-center gap-3 uppercase tracking-widest w-full justify-center"
+                    >
+                      {isUploading ? <span className="material-symbols-outlined animate-spin">refresh</span> : <span className="material-symbols-outlined">memory</span>}
+                      {isUploading ? 'Extracting Data...' : 'Commence Extraction'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center text-center group cursor-pointer">
+                    <div className="w-20 h-20 rounded-full border border-[#b73e54]/40 flex items-center justify-center mb-8 bg-[#3d272e] group-hover:scale-110 transition-all duration-500">
+                      <span className="material-symbols-outlined text-[#f2aab8] text-4xl group-hover:-translate-y-1 transition-transform">cloud_upload</span>
+                    </div>
+                    <h3 className="font-display-hero text-3xl text-on-surface mb-3 tracking-tight">Drop Clinical PDF Here</h3>
+                    <p className="font-body-md text-on-surface-variant mb-8 max-w-[250px] leading-relaxed">Drag and drop your laboratory report, or click to browse files</p>
+                    <span className="font-data-label text-[10px] uppercase tracking-[0.2em] text-[#f2aab8] border border-[#f2aab8]/30 px-6 py-2 rounded-full">PDF ONLY</span>
+                  </div>
+                )}
+                <input ref={fileInputRef} onChange={handleFileChange} accept=".pdf" className="hidden" type="file" />
+              </div>
+            </div>
+            {uploadError && <p className="text-rose-400 mt-6 text-sm font-data-label uppercase tracking-widest text-center animate-pulse">{uploadError}</p>}
+          </div>
+
+          {/* Info Panel */}
+          <div className="w-full lg:w-1/2 max-w-lg">
+            <div className="glass-card rounded-3xl p-10 border border-white/5">
+              <h3 className="font-data-label text-sm uppercase tracking-widest text-primary mb-8 flex items-center gap-3">
+                <span className="material-symbols-outlined">verified</span>
+                Supported Parameters
+              </h3>
+              
+              <p className="font-body-md text-on-surface-variant leading-relaxed mb-8">
+                Our deterministic extraction engine seamlessly parses complex laboratory formats. We currently support full extraction for the following 14 critical biomarkers:
+              </p>
+
+              <div className="grid grid-cols-2 gap-4">
                 {[
                   'WBC (White Blood Cell)', 
                   'LYMp (Lymphocytes %)', 
                   'NEUTp (Neutrophils %)', 
-                  'LYMn (Absolute Lymphocytes)', 
-                  'NEUTn (Absolute Neutrophils)', 
+                  'LYMn (Abs Lymphocytes)', 
+                  'NEUTn (Abs Neutrophils)', 
                   'RBC (Red Blood Cell)',
                   'HGB (Hemoglobin)',
                   'HCT (Hematocrit)',
-                  'MCV (Mean Corpuscular Volume)',
-                  'MCH (Mean Corpuscular Hgb)',
-                  'MCHC (Mean Corpuscular Hgb Conc.)',
+                  'MCV (Volume)',
+                  'MCH (Hgb Mass)',
+                  'MCHC (Hgb Conc.)',
                   'PLT (Platelet)',
-                  'PDW (Platelet Distribution Width)',
-                  'PCT (Plateletcrit)'
-                ].map((param, idx) => (
-                  <li key={idx} className="flex items-center justify-between group">
-                    <span className="font-body-md text-on-surface-variant group-hover:text-primary transition-colors">{param}</span>
-                    <span className="material-symbols-outlined text-secondary opacity-0 group-hover:opacity-100 transition-opacity">check_circle</span>
-                  </li>
+                  'RDW (Distribution)',
+                  'MPV (Mean Vol)'
+                ].map((item, idx) => (
+                  <div key={idx} className="flex items-center gap-3">
+                    <div className="w-1.5 h-1.5 rounded-full bg-primary/60 shadow-[0_0_10px_rgba(183,62,84,0.8)]"></div>
+                    <span className="font-data-label text-xs uppercase text-on-surface tracking-wider">{item}</span>
+                  </div>
                 ))}
-              </ul>
-              <div className="mt-8 pt-6 border-t border-primary/10">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="w-2 h-2 rounded-full bg-secondary pulse-soft"></span>
-                  <span className="font-data-label text-[12px] text-secondary uppercase tracking-tighter">AI Core Ready</span>
-                </div>
-                <p className="font-body-md text-[14px] text-on-surface-variant italic">Expecting PDF, JPG, or DICOM formats. All data is encrypted using clinical-grade security protocols.</p>
+              </div>
+
+              <div className="mt-10 pt-6 border-t border-white/10 flex items-start gap-4">
+                 <span className="material-symbols-outlined text-amber-400/80 text-xl">shield_lock</span>
+                 <div>
+                   <p className="font-data-label text-xs uppercase tracking-widest text-amber-400/80 mb-1">Privacy First</p>
+                   <p className="font-body-md text-sm text-on-surface-variant">Your reports are processed entirely in-memory. No patient data or PDFs are ever saved to disk.</p>
+                 </div>
               </div>
             </div>
           </div>
 
-          {/* Main Upload Area */}
-          <div className="lg:col-span-8 order-1 lg:order-2">
-            <div className="glass-card rounded-xl overflow-hidden">
-              <div className="p-8 md:p-12">
-                <h2 className="font-headline-md text-headline-md text-on-surface mb-8">Upload CBC Report</h2>
-                
-                {/* Drag & Drop Zone */}
-                <div 
-                  className={`relative group cursor-pointer border-2 border-dashed rounded-xl p-12 flex flex-col items-center justify-center transition-all duration-300 ${isUploading ? 'opacity-40 pointer-events-none' : ''} ${isDragOver ? 'bg-primary/10 border-primary/60' : 'border-primary/20 hover:border-primary/50 hover:bg-primary/5'}`}
-                  onDragEnter={handleDragOver}
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                  onClick={() => !isUploading && simulateUpload()}
-                >
-                  <div className="w-20 h-20 rounded-full bg-primary-container/10 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-                    <span className="material-symbols-outlined text-primary text-4xl">upload_file</span>
-                  </div>
-                  <p className="font-headline-md text-headline-md text-on-surface mb-2">Drop Clinical PDF Here</p>
-                  <p className="font-body-md text-on-surface-variant mb-8 text-center">or browse files from your secure drive</p>
-                  <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto">
-                    <button className="px-8 py-4 bg-primary-container text-on-primary-container font-data-label text-data-label rounded-lg transition-all active:scale-95 hover:bg-primary-container/80 shadow-[0_4px_20px_rgba(183,62,84,0.4)]" onClick={(e) => { e.stopPropagation(); simulateUpload(); }}>Browse Files</button>
-                    <button className="px-8 py-4 border border-primary text-primary font-data-label text-data-label rounded-lg transition-all hover:bg-primary/10" onClick={(e) => e.stopPropagation()}>Manual Entry</button>
-                  </div>
-                  <input accept=".pdf" className="hidden" id="file-input" type="file" />
-                </div>
-
-                {/* Processing State */}
-                {isUploading && (
-                  <div className="mt-12 animate-fade-in" id="processing-state">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex flex-col">
-                        <span className="font-data-label text-data-label text-primary uppercase tracking-widest mb-1">{statusText}</span>
-                        <span className="font-body-md text-on-surface-variant">{subStatus}</span>
-                      </div>
-                      <span className="font-data-value text-data-value text-primary">{Math.round(progress)}%</span>
-                    </div>
-                    <div className="w-full h-1 bg-primary/10 rounded-full overflow-hidden mb-8">
-                      <div className="loading-bar h-full bg-primary shadow-[0_0_10px_rgba(255,178,186,0.5)]" style={{ width: `${progress}%` }}></div>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div className={`flex items-center gap-3 p-4 bg-surface-container/40 rounded-lg transition-opacity ${currentStep >= 1 ? 'opacity-100 ring-1 ring-primary/40' : 'opacity-50'}`}>
-                        <span className="material-symbols-outlined text-primary">description</span>
-                        <span className="font-data-label text-[12px] text-on-surface">Extraction</span>
-                      </div>
-                      <div className={`flex items-center gap-3 p-4 bg-surface-container/40 rounded-lg transition-opacity ${currentStep >= 2 ? 'opacity-100 ring-1 ring-primary/40' : 'opacity-50'}`}>
-                        <span className="material-symbols-outlined text-primary">biotech</span>
-                        <span className="font-data-label text-[12px] text-on-surface">Mapping</span>
-                      </div>
-                      <div className={`flex items-center gap-3 p-4 bg-surface-container/40 rounded-lg transition-opacity ${currentStep >= 3 ? 'opacity-100 ring-1 ring-primary/40' : 'opacity-50'}`}>
-                        <span className="material-symbols-outlined text-primary">clinical_notes</span>
-                        <span className="font-data-label text-[12px] text-on-surface">Verification</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-
-          </div>
         </div>
       </main>
-
-      <footer className="w-full py-section-gap border-t border-primary/10 bg-surface z-10 relative">
-        <div className="max-w-container-max mx-auto px-margin-desktop flex flex-col md:flex-row justify-between items-center gap-unit">
-          <span className="font-display-hero text-body-lg text-primary">MedCura Intelligence</span>
-          <div className="flex gap-8 my-6 md:my-0">
-            <a className="font-data-label text-data-label text-on-surface-variant hover:text-secondary transition-colors duration-200" href="#">Privacy Protocol</a>
-            <a className="font-data-label text-data-label text-on-surface-variant hover:text-secondary transition-colors duration-200" href="#">Medical Terms</a>
-            <a className="font-data-label text-data-label text-on-surface-variant hover:text-secondary transition-colors duration-200" href="#">Support</a>
-          </div>
-          <p className="font-data-label text-[12px] text-on-surface-variant">© 2024 MedCura Intelligence. For clinical research use only.</p>
-        </div>
-      </footer>
     </div>
   );
 }

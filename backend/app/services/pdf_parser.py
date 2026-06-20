@@ -1,142 +1,242 @@
-import io
 import re
-import pdfplumber
-from typing import Dict, Optional, Tuple
+import fitz
+from typing import List, Dict, Optional
 
-# Updated to exactly match the 14 features from diagnosed_cbc_data_v4.csv
 BIOMARKER_ALIASES = {
-    "WBC": ["wbc", "total wbc", "white blood cell", "tlc", "leukocytes", "total leukocyte count"],
-    "LYMp": ["lymphocytes %", "lymph %", "lymphocyte percent", "lymphocytes"],
-    "NEUTp": ["neutrophils %", "neutrophil %", "polymorphs %", "neutrophils"],
-    "LYMn": ["lymphocytes absolute", "absolute lymphocytes", "abs lymphocytes"],
-    "NEUTn": ["neutrophils absolute", "absolute neutrophils", "abs neutrophils"],
-    "RBC": ["rbc", "red blood cell", "red cell count", "total rbc"],
-    "HGB": ["hgb", "hb", "hemoglobin", "haemoglobin"],
-    "HCT": ["hct", "hematocrit", "haematocrit", "pcv", "packed cell volume"],
-    "MCV": ["mcv", "mean corpuscular volume"],
-    "MCH": ["mch", "mean corpuscular hgb", "mean corpuscular hemoglobin"],
-    "MCHC": ["mchc", "mean corpuscular hgb concentration", "mean corpuscular hemoglobin concentration"],
-    "PLT": ["plt", "platelet", "platelet count", "thrombocyte count"],
-    "PDW": ["pdw", "platelet distribution width"],
-    "PCT": ["pct", "plateletcrit"]
+    "WBC": ["tlc: total leucocyte/wbc count", "wbc", "tlc", "total leucocyte count", "white blood cell count"],
+    "LYMp": ["lymphocytes %", "lymphocytes"],
+    "NEUTp": ["neutrophils %", "neutrophils"],
+    "LYMn": ["absolute lymphocyte count (alc)", "alc", "absolute lymphocyte count"],
+    "NEUTn": ["anc: absolute neutrophil count", "anc", "absolute neutrophil count"],
+    "RBC": ["r.b.c. count", "rbc count", "rbc"],
+    "HGB": ["hemoglobin", "hgb", "hb"],
+    "HCT": ["p.c.v. (packed cell volume)", "p.c.v.", "pcv", "packed cell volume", "hematocrit", "hct"],
+    "MCV": ["mcv:mean corposcular volume", "mcv", "mean corpuscular volume"],
+    "MCH": ["mch:mean corpuscular hemoglobin", "mch", "mean corpuscular hemoglobin"],
+    "MCHC": ["mchc", "mean corpuscular hemoglobin concentration"],
+    "RDW": ["rdw -cv", "rdw", "rdw-cv", "rdw cv", "red cell distribution width"],
+    "PLT": ["platelet count", "plt", "platelet"],
+    "MPV": ["mpv: mean platelet volume", "mpv", "mean platelet volume"]
 }
 
-# Nephora Regex patterns
-NUMERIC_RE = re.compile(r'^\d+(\.\d+)?(?:[\*HhLl])?$')
-RANGE_RE = re.compile(r'(\d+\.?\d*)\s*[-–]\s*(\d+\.?\d*)')
-INLINE_RE = re.compile(
-    r'(.+?)\s{2,}'                          # test name (2+ spaces separator)
-    r'(\d+\.?\d*)\s+'                       # numeric value
-    r'([\w/%µ\s\.]+?)\s{2,}'                # unit
-    r'(\d+\.?\d*\s*[-–]\s*\d+\.?\d*)'       # reference range
-)
+class MedicalReportExtractor:
+    """
+    Deterministic extraction of lab markers from medical PDFs.
+    SECURITY: No LLM usage - prevents hallucination of medical values.
+    SAFETY: Uses hardcoded unit mapping for accuracy.
+    """
+    
+    def __init__(self):
+        self.skip_keywords = [
+            'TEST PARAMETER', 'REFERENCE RANGE', 'RESULT', 'UNIT', 'SAMPLE TYPE',
+            'Page', 'Report Status', 'Collected On', 'Reported On', 'Final',
+            'Method:', 'Automated', 'Patient Location', 'Flowcytometry',
+            'Lab ID', 'UH ID', 'Registered On', 'Age/Gender', 'Electrical Impedence',
+            'LABORATORY TEST REPORT', 'HAEMATOLOGY', 'Ref. By', 'Calculated',
+            'Processed By', 'End Of Report', 'EDTA', 'Pathologist', 'whole blood',
+            'TERMS & CONDITIONS', 'Dr ', 'KMC-', 'Meda Salomi', 'COMPLETE BLOOD COUNT',
+            'Male', 'Female', 'Years', 'Name', 'Mr.', 'Mrs.', 'Ms.', 
+            'Differential Leucocyte Count', 'IP/OP No', 'AKSHAYA NEURO'
+        ]
+        
+        # HARDCODED UNIT MAPPING - Based on standard lab report format
+        self.unit_map = {
+            'hemoglobin': 'gm/dl', 'hb': 'gm/dl', 'hgb': 'gm/dl',
+            'r.b.c. count': 'million/cumm', 'rbc count': 'million/cumm', 'rbc': 'million/cumm',
+            'red blood cell count': 'million/cumm',
+            'p.c.v.': '%', 'pcv': '%', 'packed cell volume': '%', 'hematocrit': '%', 'hct': '%',
+            'mcv': 'fL', 'mean corpuscular volume': 'fL',
+            'mch': 'pg', 'mean corpuscular hemoglobin': 'pg',
+            'mchc': 'gm/dl', 'mean corpuscular hemoglobin concentration': 'gm/dl',
+            'rdw': '%', 'rdw-cv': '%', 'rdw cv': '%', 'red cell distribution width': '%',
+            'rdw sd': 'fL', 'rdw-sd': 'fL',
+            'tlc': 'cells/cumm', 'wbc': 'cells/cumm', 'wbc count': 'cells/cumm',
+            'total leucocyte count': 'cells/cumm', 'total leukocyte count': 'cells/cumm',
+            'white blood cell count': 'cells/cumm',
+            'neutrophils': '%', 'neutrophil': '%', 'lymphocytes': '%', 'lymphocyte': '%',
+            'eosinophils': '%', 'eosinophil': '%', 'monocytes': '%', 'monocyte': '%',
+            'basophils': '%', 'basophil': '%',
+            'anc': '10³/μL', 'absolute neutrophil count': '10³/μL',
+            'alc': '10³/μL', 'absolute lymphocyte count': '10³/μL',
+            'aec': '10³/μL', 'absolute eosinophil count': '10³/μL',
+            'amc': '10³/μL', 'absolute monocyte count': '10³/μL',
+            'abc': '10³/μL', 'absolute basophil count': '10³/μL',
+            'platelet count': 'Lakhs/cmm', 'platelet': 'Lakhs/cmm', 'plt': 'Lakhs/cmm',
+            'mpv': 'fL', 'mean platelet volume': 'fL',
+        }
+    
+    def _parse_multiline_format(self, text: str) -> List[Dict]:
+        """Parse multi-line format"""
+        results = []
+        lines = [line.strip() for line in text.split('\n')]
+        i = 0
+        
+        while i < len(lines):
+            line = lines[i]
+            
+            if not line or self._should_skip_line(line):
+                i += 1
+                continue
+            
+            if self._is_potential_test_name(line):
+                test_name = line
+                result_value = None
+                ref_range = None
+                
+                # Look ahead for value
+                for j in range(i + 1, min(i + 7, len(lines))):
+                    next_line = lines[j].strip()
+                    
+                    if not next_line or any(x in next_line for x in ['Method:', 'Automated', 'Calculated']):
+                        continue
+                        
+                    if not ref_range:
+                        m = re.search(r'(\d+\.?\d*)\s*[-–]\s*(\d+\.?\d*)', next_line)
+                        if m:
+                            ref_range = (float(m.group(1)), float(m.group(2)))
+                    
+                    if self._is_result_value(next_line):
+                        result_value = next_line
+                        
+                        if not ref_range:
+                            for k in range(j + 1, min(j + 5, len(lines))):
+                                range_line = lines[k].strip()
+                                m = re.search(r'(\d+\.?\d*)\s*[-–]\s*(\d+\.?\d*)', range_line)
+                                if m:
+                                    ref_range = (float(m.group(1)), float(m.group(2)))
+                                    break
+                                    
+                        i = j
+                        break
+                
+                if result_value:
+                    # Get unit from hardcoded map
+                    unit = self._get_unit_for_test(test_name)
+                    
+                    results.append({
+                        "test": self._clean_test_name(test_name),
+                        "result": result_value,
+                        "unit": unit,
+                        "ref_low": ref_range[0] if ref_range else None,
+                        "ref_high": ref_range[1] if ref_range else None
+                    })
+            
+            i += 1
+        
+        return results
+    
+    def _get_unit_for_test(self, test_name: str) -> str:
+        normalized = test_name.lower().strip()
+        normalized = re.sub(r'[:\(\)]', '', normalized)  
+        normalized = ' '.join(normalized.split())  
+        
+        if normalized in self.unit_map:
+            return self.unit_map[normalized]
+        for key, unit in self.unit_map.items():
+            if key in normalized or normalized in key:
+                return unit
+        return ''
+    
+    def _should_skip_line(self, line: str) -> bool:
+        if any(k.lower() in line.lower() for k in self.skip_keywords):
+            return True
+        if len(line) <= 1:
+            return True
+        if all(c in '-:/' for c in line):
+            return True
+        return False
+    
+    def _is_potential_test_name(self, line: str) -> bool:
+        if len(line) < 3:
+            return False
+        if not line[0].isupper():
+            return False
+        letters = [c for c in line if c.isalpha()]
+        if not letters:
+            return False
+        uppercase_ratio = sum(c.isupper() for c in letters) / len(letters)
+        return uppercase_ratio >= 0.5
+    
+    def _is_result_value(self, line: str) -> bool:
+        return bool(re.match(r'^[\d\.]+$', line))
+    
+    def _clean_test_name(self, name: str) -> str:
+        return ' '.join(name.split()).rstrip(':').strip()
+    
+    def _deduplicate_results(self, results: List[Dict]) -> List[Dict]:
+        seen = set()
+        unique = []
+        for r in results:
+            key = (r['test'].lower(), r['result'])
+            if key not in seen:
+                seen.add(key)
+                unique.append(r)
+        return unique
 
 class CBCParser:
     def __init__(self):
-        self.alias_map = {}
+        self.extractor = MedicalReportExtractor()
+        
+        self.canonical_map = {}
         for canonical, aliases in BIOMARKER_ALIASES.items():
             for alias in aliases:
-                self.alias_map[alias.lower().strip()] = canonical
-
-    def extract_cbc_from_pdf(self, file_bytes: bytes) -> dict:
-        try:
-            all_text = ""
-            # Use pdfplumber with layout=True to preserve the 2+ spaces for INLINE_RE
-            with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-                for page in pdf.pages:
-                    text = page.extract_text(layout=True)
-                    if text:
-                        all_text += text + "\n"
-
-            found = {}
-            
-            # Pass 1: Try Nephora inline parsing 
-            found.update(self._parse_inline(all_text))
-            
-            # Pass 2: Nephora multiline parsing for missing targets
-            missing = [b for b in BIOMARKER_ALIASES if b not in found]
-            if missing:
-                found.update(self._parse_multiline(all_text, missing))
+                self.canonical_map[alias.lower().strip()] = canonical
                 
-            # Clean up the output to match MedCura schemas
-            final_result = {}
-            for k, v in found.items():
-                final_result[k] = v["value"]
-                
-            return {"success": True, "data": final_result}
-            
-        except Exception as e:
-            return {"success": False, "error": str(e), "data": {}}
+        # Sort by length descending to prevent shorter words (like 'hemoglobin') 
+        # from preemptively matching longer words (like 'mean corpuscular hemoglobin')
+        self.sorted_aliases = sorted(self.canonical_map.items(), key=lambda x: len(x[0]), reverse=True)
 
     def _match_biomarker(self, text: str) -> Optional[str]:
         normalized = re.sub(r'[:\(\)]', '', text.lower().strip())
         normalized = ' '.join(normalized.split())
-        if normalized in self.alias_map:
-            return self.alias_map[normalized]
-        for alias, canonical in self.alias_map.items():
+        
+        if normalized in self.canonical_map:
+            return self.canonical_map[normalized]
+            
+        for alias, canonical in self.sorted_aliases:
             if alias in normalized:
                 return canonical
         return None
 
-    def _parse_range(self, range_str: str) -> Tuple[Optional[float], Optional[float]]:
-        m = RANGE_RE.search(range_str)
-        if m:
-            return float(m.group(1)), float(m.group(2))
-        return None, None
-
-    def _parse_inline(self, text: str) -> Dict:
-        found = {}
-        for line in text.split('\n'):
-            m = INLINE_RE.match(line.strip())
-            if not m:
-                continue
-            test_text, value_str, unit_str, range_str = m.group(1), m.group(2), m.group(3), m.group(4)
-            canonical = self._match_biomarker(test_text)
-            if canonical and canonical not in found:
-                ref_low, ref_high = self._parse_range(range_str)
-                found[canonical] = {
-                    "value": float(value_str),
-                    "unit": unit_str.strip(),
-                    "ref_low": ref_low,
-                    "ref_high": ref_high
-                }
-        return found
-
-    def _parse_multiline(self, text: str, targets: list) -> Dict:
-        found = {}
-        lines = [l.strip() for l in text.split('\n')]
-        for i, line in enumerate(lines):
-            if not line:
-                continue
-            canonical = self._match_biomarker(line)
-            if not canonical or canonical in found or canonical not in targets:
-                continue
+    def extract_cbc_from_pdf(self, file_bytes: bytes) -> dict:
+        try:
+            # We use "pdf" as the stream type identifier for fitz when passing bytes
+            doc = fitz.open("pdf", file_bytes)
+            all_results = []
             
-            value = unit = None
-            ref_low = ref_high = None
-            for j in range(i + 1, min(i + 9, len(lines))):
-                chunk = lines[j].strip()
-                if not chunk:
-                    continue
-                if chunk.lower().startswith('method') or chunk.lower().startswith('automated'):
-                    continue
-                if value is None and NUMERIC_RE.match(chunk):
-                    value = float(chunk)
-                    continue
-                if RANGE_RE.search(chunk) and ref_low is None:
-                    ref_low, ref_high = self._parse_range(chunk)
-                    continue
-                if unit is None and value is not None and re.match(r'^[a-zA-Z%/µ\.]+\s*/?[a-zA-Z]*$', chunk):
-                    unit = chunk
+            for page_num in range(len(doc)):
+                text = doc[page_num].get_text()
+                all_results.extend(self.extractor._parse_multiline_format(text))
             
-            if value is not None:
-                found[canonical] = {
-                    "value": value,
-                    "unit": unit or "",
-                    "ref_low": ref_low,
-                    "ref_high": ref_high
-                }
-        return found
+            doc.close()
+            unique_results = self.extractor._deduplicate_results(all_results)
+            
+            mapped_data = {}
+            for res in unique_results:
+                canonical = self._match_biomarker(res['test'])
+                if canonical:
+                    try:
+                        val_float = float(res['result'])
+                        mapped_data[canonical] = {
+                            "value": val_float,
+                            "unit": res['unit'],
+                            "ref_low": res.get('ref_low'),
+                            "ref_high": res.get('ref_high')
+                        }
+                    except ValueError:
+                        pass
+                        
+            return {
+                "success": True,
+                "data": mapped_data
+            }
+            
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "data": {}
+            }
 
 # Instantiate for use in routers
 pdf_extractor = CBCParser()
