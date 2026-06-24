@@ -3,6 +3,7 @@ import LandingPage from './pages/LandingPage';
 import UploadReport from './pages/UploadReport';
 import AnalysisPage from './pages/AnalysisPage';
 import ResultsPage from './pages/ResultsPage';
+import AnemiaTypePage from './pages/AnemiaTypePage';
 
 function App() {
   return (
@@ -12,6 +13,7 @@ function App() {
         <Route path="/upload" element={<UploadReport />} />
         <Route path="/analysis" element={<AnalysisPage />} />
         <Route path="/results" element={<ResultsPage />} />
+        <Route path="/anemia-type" element={<AnemiaTypePage />} />
       </Routes>
     </BrowserRouter>
   );

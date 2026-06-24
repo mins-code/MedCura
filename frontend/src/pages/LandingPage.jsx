@@ -10,7 +10,11 @@ export default function LandingPage() {
         <div className="flex items-center gap-4">
           <div className="h-8 text-primary font-display-hero text-3xl font-bold tracking-tight">MedCura</div>
         </div>
-        <div className="hidden md:flex items-center gap-8 mx-auto">
+        <div className="hidden md:flex items-center gap-14 mx-auto">
+          <span className="font-data-label text-data-label text-primary border-b-2 border-primary cursor-default">Home</span>
+          <Link className="font-data-label text-data-label text-on-surface-variant hover:text-primary transition-colors duration-300" to="/upload">Upload Report</Link>
+          <Link className="font-data-label text-data-label text-on-surface-variant hover:text-primary transition-colors duration-300" to="/analysis">Analysis</Link>
+          <Link className="font-data-label text-data-label text-on-surface-variant hover:text-primary transition-colors duration-300" to="/results">Results</Link>
         </div>
         <div className="flex items-center gap-4">
           <span className="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors cursor-pointer" data-icon="notifications">notifications</span>

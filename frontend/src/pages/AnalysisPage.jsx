@@ -9,7 +9,11 @@ export default function AnalysisPage() {
   const [isPredicting, setIsPredicting] = useState(false);
   const [error, setError] = useState('');
 
-  const extractedData = location.state?.extractedData || {};
+  const [extractedData] = useState(() => {
+    if (location.state?.extractedData) return location.state.extractedData;
+    const stored = sessionStorage.getItem('extractedData');
+    return stored ? JSON.parse(stored) : {};
+  });
   const entries = Object.entries(extractedData);
   const [currentIndex, setCurrentIndex] = useState(0);
 
@@ -98,7 +102,7 @@ export default function AnalysisPage() {
   const currentCards = entries.slice(currentIndex, currentIndex + 2);
 
   return (
-    <div className="bg-background text-on-surface font-body-md selection:bg-primary-container selection:text-on-primary-container min-h-screen relative overflow-hidden">
+    <div className="bg-medical-mesh text-on-surface font-body-md selection:bg-primary-container selection:text-on-primary-container min-h-screen relative overflow-hidden">
       <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
         <div className="floating-blob top-[-10%] left-[-10%] opacity-40"></div>
         <div className="floating-blob bottom-[-20%] right-[-10%] opacity-30" style={{ animationDelay: '-5s' }}></div>
@@ -108,9 +112,11 @@ export default function AnalysisPage() {
         <div className="flex items-center gap-unit">
           <Link to="/" className="font-display-hero text-headline-md text-primary tracking-tight">MedCura</Link>
         </div>
-        <div className="hidden md:flex items-center gap-8">
+        <div className="hidden md:flex items-center gap-14">
           <Link className="font-data-label text-data-label text-on-surface-variant hover:text-primary transition-colors duration-300" to="/">Home</Link>
-          <Link className="font-data-label text-data-label text-primary border-b-2 border-primary" to="/upload">Upload Report</Link>
+          <Link className="font-data-label text-data-label text-on-surface-variant hover:text-primary transition-colors duration-300" to="/upload">Upload Report</Link>
+          <span className="font-data-label text-data-label text-primary border-b-2 border-primary cursor-default">Analysis</span>
+          <Link className="font-data-label text-data-label text-on-surface-variant hover:text-primary transition-colors duration-300" to="/results">Results</Link>
         </div>
         <div className="flex items-center gap-4">
           <div className="w-8 h-8 rounded-full bg-primary-container/20 border border-primary/20 flex items-center justify-center overflow-hidden">

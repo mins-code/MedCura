@@ -14,9 +14,9 @@ BIOMARKER_ALIASES = {
     "MCV": ["mcv:mean corposcular volume", "mcv", "mean corpuscular volume"],
     "MCH": ["mch:mean corpuscular hemoglobin", "mch", "mean corpuscular hemoglobin"],
     "MCHC": ["mchc", "mean corpuscular hemoglobin concentration"],
-    "RDW": ["rdw -cv", "rdw", "rdw-cv", "rdw cv", "red cell distribution width"],
+    "PDW": ["rdw -cv", "rdw", "rdw-cv", "rdw cv", "red cell distribution width", "pdw", "platelet distribution width"],
     "PLT": ["platelet count", "plt", "platelet"],
-    "MPV": ["mpv: mean platelet volume", "mpv", "mean platelet volume"]
+    "PCT": ["mpv: mean platelet volume", "mpv", "mean platelet volume", "pct", "plateletcrit"]
 }
 
 class MedicalReportExtractor:
@@ -36,7 +36,9 @@ class MedicalReportExtractor:
             'Processed By', 'End Of Report', 'EDTA', 'Pathologist', 'whole blood',
             'TERMS & CONDITIONS', 'Dr ', 'KMC-', 'Meda Salomi', 'COMPLETE BLOOD COUNT',
             'Male', 'Female', 'Years', 'Name', 'Mr.', 'Mrs.', 'Ms.', 
-            'Differential Leucocyte Count', 'IP/OP No', 'AKSHAYA NEURO'
+            'Differential Leucocyte Count', 'IP/OP No', 'AKSHAYA NEURO',
+            'HbA1c', 'Glycosylated', 'Glycated', 'Average Blood Glucose',
+            'NRBC', 'Nucleated'
         ]
         
         # HARDCODED UNIT MAPPING - Based on standard lab report format
@@ -84,7 +86,7 @@ class MedicalReportExtractor:
                 ref_range = None
                 
                 # Look ahead for value
-                for j in range(i + 1, min(i + 7, len(lines))):
+                for j in range(i + 1, min(i + 20, len(lines))):
                     next_line = lines[j].strip()
                     
                     if not next_line or any(x in next_line for x in ['Method:', 'Automated', 'Calculated']):
@@ -96,7 +98,7 @@ class MedicalReportExtractor:
                             ref_range = (float(m.group(1)), float(m.group(2)))
                     
                     if self._is_result_value(next_line):
-                        result_value = next_line
+                        result_value = self._extract_float_str(next_line)
                         
                         if not ref_range:
                             for k in range(j + 1, min(j + 5, len(lines))):
@@ -158,7 +160,27 @@ class MedicalReportExtractor:
         return uppercase_ratio >= 0.5
     
     def _is_result_value(self, line: str) -> bool:
-        return bool(re.match(r'^[\d\.]+$', line))
+        # Reject reference ranges
+        if re.search(r'\d+\.?\d*\s*[-–]\s*\d+\.?\d*', line):
+            return False
+            
+        # Clean asterisks and High/Low/H/L flags
+        clean = re.sub(r'[*]', '', line).strip()
+        clean = re.sub(r'\b(High|Low|H|L)\b', '', clean, flags=re.IGNORECASE).strip()
+        
+        # Check if remaining text is just a number
+        if re.match(r'^[\d\.]+$', clean):
+            return True
+            
+        # Check if it's a number with units attached (e.g., "13.9 gm/dl")
+        if re.match(r'^[\d\.]+\s*[a-zA-Z/%³µ\.]+$', clean):
+            return True
+            
+        return False
+        
+    def _extract_float_str(self, line: str) -> str:
+        m = re.search(r'(\d+\.?\d*)', line)
+        return m.group(1) if m else line
     
     def _clean_test_name(self, name: str) -> str:
         return ' '.join(name.split()).rstrip(':').strip()
@@ -180,21 +202,27 @@ class CBCParser:
         self.canonical_map = {}
         for canonical, aliases in BIOMARKER_ALIASES.items():
             for alias in aliases:
-                self.canonical_map[alias.lower().strip()] = canonical
+                # Normalize aliases the same way as text
+                norm_alias = re.sub(r'[:\(\)\-]', ' ', alias.lower().strip())
+                norm_alias = ' '.join(norm_alias.split())
+                self.canonical_map[norm_alias] = canonical
                 
         # Sort by length descending to prevent shorter words (like 'hemoglobin') 
         # from preemptively matching longer words (like 'mean corpuscular hemoglobin')
         self.sorted_aliases = sorted(self.canonical_map.items(), key=lambda x: len(x[0]), reverse=True)
 
     def _match_biomarker(self, text: str) -> Optional[str]:
-        normalized = re.sub(r'[:\(\)]', '', text.lower().strip())
+        # Replace special characters with a space so words don't merge (e.g. "MCH:Mean" -> "mch mean")
+        normalized = re.sub(r'[:\(\)\-]', ' ', text.lower().strip())
         normalized = ' '.join(normalized.split())
         
         if normalized in self.canonical_map:
             return self.canonical_map[normalized]
             
         for alias, canonical in self.sorted_aliases:
-            if alias in normalized:
+            # Use word boundaries to prevent 'hb' from matching 'hba1c' or 'rbc' matching 'nrbc'
+            pattern = r'\b' + re.escape(alias) + r'\b'
+            if re.search(pattern, normalized):
                 return canonical
         return None
 

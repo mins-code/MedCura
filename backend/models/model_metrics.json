@@ -2,7 +2,7 @@
   "RandomForest": {
     "accuracy": 0.9922,
     "weighted_f1": 0.9924,
-    "inference_ms": 0.378,
+    "inference_ms": 0.118,
     "per_class_f1": {
       "0": {
         "precision": 1.0,
@@ -177,7 +177,7 @@
   "KNN": {
     "accuracy": 0.7237,
     "weighted_f1": 0.7259,
-    "inference_ms": 0.264,
+    "inference_ms": 0.053,
     "per_class_f1": {
       "0": {
         "precision": 0.8923076923076924,
@@ -352,7 +352,7 @@
   "SVM": {
     "accuracy": 0.8677,
     "weighted_f1": 0.8669,
-    "inference_ms": 0.449,
+    "inference_ms": 0.06,
     "per_class_f1": {
       "0": {
         "precision": 0.9230769230769231,
@@ -527,7 +527,7 @@
   "LogisticReg": {
     "accuracy": 0.6342,
     "weighted_f1": 0.6359,
-    "inference_ms": 0.034,
+    "inference_ms": 0.002,
     "per_class_f1": {
       "0": {
         "precision": 0.6486486486486487,

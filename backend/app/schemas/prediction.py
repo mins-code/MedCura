@@ -30,6 +30,10 @@ class PredictionResponse(BaseModel):
     best_model_name: str
     best_model_prediction: Optional[int] = None
     final_type: Optional[int] = None
-    bn_confidence: Optional[float] = None
+    binary_probabilities: Optional[Dict[str, float]] = None
+    weighted_anemia_prob: Optional[float] = None
+    diagnosis: Optional[str] = None
+    is_anemic: Optional[bool] = None
+    bayesian_imputed: Optional[Dict[str, Any]] = None   # {feat: {value, source, name, unit}}
     explanation: str
     model_metrics: Optional[Dict[str, Any]] = None
